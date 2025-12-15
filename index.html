@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Watch Physics Simulation</title>
+  <link rel="stylesheet" href="/node_modules/lil-gui/dist/lil-gui.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+    }
+    /* Hide scrollbar for debug panel */
+    #debug-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+    #debug-panel::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+    }
+    #debug-panel::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.3);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <script>
+    // Aggressively unregister service workers (cleanup from previous projects)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        registrations.forEach(registration => {
+          registration.unregister().then(() => {
+            console.log('Service worker unregistered');
+          });
+        });
+      });
+      // Also try to unregister by scope
+      navigator.serviceWorker.ready.then(registration => {
+        registration.unregister();
+      });
+    }
+    // Clear all caches
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+
