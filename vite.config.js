@@ -2,6 +2,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default {
   base: '/watch2/',
+  build: {
+    minify: false, // Temporarily disable minification to test if it's causing TDZ issues
+  },
   server: {
     port: 3000,
     open: true
