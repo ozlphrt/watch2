@@ -1007,6 +1007,12 @@ function eulerToQuaternion(x, y, z) {
 
 // Animation loop
 function animate() {
+  // Safety check: ensure cubes array is initialized before proceeding
+  if (typeof cubes === 'undefined' || !Array.isArray(cubes)) {
+    requestAnimationFrame(animate);
+    return;
+  }
+  
   requestAnimationFrame(animate);
   
   // Update FPS counter
@@ -1465,7 +1471,17 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-animate();
+// Ensure cubes array is initialized before starting animation
+if (typeof cubes !== 'undefined' && Array.isArray(cubes)) {
+  animate();
+} else {
+  // Fallback: wait for next tick if cubes isn't ready
+  requestAnimationFrame(() => {
+    if (typeof cubes !== 'undefined' && Array.isArray(cubes)) {
+      animate();
+    }
+  });
+}
 
 // Handle window resize
 window.addEventListener('resize', () => {
