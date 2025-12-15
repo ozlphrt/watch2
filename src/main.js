@@ -8,7 +8,8 @@ import { setupCoordinateSystem } from './utils/coordinateSystem.js';
 
 // Initialize cubes array at the very top to prevent ReferenceError
 // This must be declared before any code that references it
-const cubes = [];
+// Using var instead of const to avoid TDZ issues in minified code
+var cubes = [];
 
 // Coordinate system declaration (per CURSOR_RULES.md §6)
 // Right-handed, Y-up
