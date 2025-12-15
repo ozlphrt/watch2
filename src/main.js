@@ -55,11 +55,11 @@ function isMobileDevice() {
 }
 const isMobile = isMobileDevice();
 
-// Mobile camera auto-adjustment variables
-let targetCameraPosition = new THREE.Vector3();
-let targetCameraZoom = 1.7;
-let cameraLerpSpeed = 0.03; // Slower, smoother camera movement
-let lastCameraAdjustSecond = -1; // Track when camera was last adjusted
+// Mobile camera auto-adjustment variables - using var to avoid TDZ issues in minified code
+var targetCameraPosition = new THREE.Vector3();
+var targetCameraZoom = 1.7;
+var cameraLerpSpeed = 0.03; // Slower, smoother camera movement
+var lastCameraAdjustSecond = -1; // Track when camera was last adjusted
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
