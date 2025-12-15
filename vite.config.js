@@ -1,4 +1,5 @@
 export default {
+  base: '/watch2/',
   server: {
     port: 3000,
     open: true
