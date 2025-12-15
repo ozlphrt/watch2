@@ -1,0 +1,25 @@
+{
+  "name": "Watch Physics Simulation",
+  "short_name": "Watch2",
+  "description": "Interactive 3D watch with physics simulation",
+  "start_url": "/watch2/",
+  "display": "standalone",
+  "background_color": "#a0a0b0",
+  "theme_color": "#a0a0b0",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/watch2/192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/watch2/512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
