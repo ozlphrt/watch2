@@ -6,6 +6,10 @@ import { createWatchFace, createTextTexture } from './watch/watchFace.js';
 import { createWatchArms } from './watch/watchArms.js';
 import { setupCoordinateSystem } from './utils/coordinateSystem.js';
 
+// Initialize cubes array at the very top to prevent ReferenceError
+// This must be declared before any code that references it
+const cubes = [];
+
 // Coordinate system declaration (per CURSOR_RULES.md §6)
 // Right-handed, Y-up
 // X: East(+)/West(-)
@@ -128,8 +132,7 @@ scene.add(arms);
 // Physics setup
 let physicsWorld;
 let RAPIER; // Will be loaded dynamically
-// Initialize cubes array early to prevent ReferenceError
-const cubes = []; // Array to store cube meshes and their physics bodies
+// cubes array is already declared at the top of the file
 let armBodies = {
   second: null,
   minute: null,
@@ -1471,16 +1474,19 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// Ensure cubes array is initialized before starting animation
-if (typeof cubes !== 'undefined' && Array.isArray(cubes)) {
-  animate();
-} else {
-  // Fallback: wait for next tick if cubes isn't ready
-  requestAnimationFrame(() => {
-    if (typeof cubes !== 'undefined' && Array.isArray(cubes)) {
+// Delay animate() call until DOM is ready and module is fully initialized
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    // Use setTimeout to ensure all module code is executed
+    setTimeout(() => {
       animate();
-    }
+    }, 0);
   });
+} else {
+  // DOM already loaded, but still delay to ensure module initialization
+  setTimeout(() => {
+    animate();
+  }, 0);
 }
 
 // Handle window resize
