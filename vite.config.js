@@ -9,7 +9,7 @@ export default {
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['192.png', '512.png'],
+      includeAssets: ['192.png', '512.png', 'favicon.ico'],
       manifest: {
         name: 'Watch Physics Simulation',
         short_name: 'Watch2',

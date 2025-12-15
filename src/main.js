@@ -128,7 +128,8 @@ scene.add(arms);
 // Physics setup
 let physicsWorld;
 let RAPIER; // Will be loaded dynamically
-let cubes = []; // Array to store cube meshes and their physics bodies
+// Initialize cubes array early to prevent ReferenceError
+const cubes = []; // Array to store cube meshes and their physics bodies
 let armBodies = {
   second: null,
   minute: null,
@@ -1020,7 +1021,7 @@ function animate() {
   }
   
   // Update stats display (cube count and FPS)
-  if (statsElement) {
+  if (statsElement && Array.isArray(cubes)) {
     const currentCubeCount = cubes.length;
     statsElement.innerHTML = `Cubes: ${currentCubeCount}<br>FPS: ${fps}`;
   }
@@ -1038,6 +1039,7 @@ function animate() {
   
   // Check cube count and spawn special cubes BEFORE regular cube spawning
   // This ensures we check the count before it increases from regular spawning
+  if (!Array.isArray(cubes)) return; // Safety check - ensure cubes array is initialized
   const currentCubeCount = cubes.length;
   
   // Spawn a new red repulsion cube when crossing the 300 threshold
