@@ -574,6 +574,19 @@ const SPECIAL_CUBE_LIFETIME = 15000; // 15 seconds in milliseconds
 // Debug panel using lil-gui (dat.GUI style) - only on desktop
 let gui = null;
 let guiContainer = null;
+
+// Store controller references for real-time updates - must be declared before GUI creation
+var cameraControllers = {
+  positionX: null,
+  positionY: null,
+  positionZ: null,
+  targetX: null,
+  targetY: null,
+  targetZ: null,
+  zoom: null,
+  fov: null
+};
+
 if (!isMobile) {
   gui = new GUI({ title: 'Debug Panel', autoPlace: false });
   gui.close(); // Collapse debug panel by default
@@ -947,16 +960,7 @@ function updateCubeSizes() {
 }
 
 // Store controller references for real-time updates (defined outside if block for animate function)
-const cameraControllers = {
-  positionX: null,
-  positionY: null,
-  positionZ: null,
-  targetX: null,
-  targetY: null,
-  targetZ: null,
-  zoom: null,
-  fov: null
-};
+// cameraControllers is now declared earlier, before GUI creation
 
 
 // FPS and cube count display at top right
