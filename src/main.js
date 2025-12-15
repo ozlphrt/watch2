@@ -1154,9 +1154,10 @@ function animate() {
     const currentTip2X = Math.sin(smoothedSecondsRotation) * armHalfLength;
     const currentTip2Z = Math.cos(smoothedSecondsRotation) * armHalfLength;
     
-    // Follow the forward tip of the arm (tip2) instead of the center
-    // This creates a moving target that follows the arm's rotation
-    const armTarget = new THREE.Vector3(currentTip2X, armY, currentTip2Z);
+    // Calculate the midpoint of the seconds arm (center point between the two tips)
+    const armMidpointX = (currentTip1X + currentTip2X) / 2;
+    const armMidpointZ = (currentTip1Z + currentTip2Z) / 2;
+    const armTarget = new THREE.Vector3(armMidpointX, armY, armMidpointZ);
     
     // Calculate bounding box of the arm at current rotation (only arm tips, no center reference)
     const minX = Math.min(currentTip1X, currentTip2X) - padding;
@@ -1167,73 +1168,82 @@ function animate() {
     const boxWidth = maxX - minX;
     const boxHeight = maxZ - minZ;
     
-    // Use a fixed camera angle and distance for consistent calculations
-    const cameraAngle = isPortrait ? Math.PI / 4.8 : Math.PI / 5.0; // ~37-36 degrees
-    const cameraDistance = 4.5; // Fixed distance
+    // Calculate optimal camera position and zoom to keep arm 100% visible with max zoom
+    // Test multiple camera positions to find the one that maximizes zoom
+    const baseCameraDistance = 4.5;
+    const baseCameraAngle = isPortrait ? Math.PI / 4.8 : Math.PI / 5.0; // ~37-36 degrees
     
-    // Calculate camera position relative to arm target (forward tip)
-    const cameraHeight = armTarget.y + cameraDistance * Math.sin(cameraAngle);
-    const cameraHorizontalDist = cameraDistance * Math.cos(cameraAngle);
+    let bestZoom = 1.0;
+    let bestCameraPos = new THREE.Vector3();
     
-    // Position camera to look at arm target with slight offset
-    const cameraOffsetX = 0.1;
-    const cameraOffsetZ = 0.9;
+    // Test different camera angles (azimuth) around the arm midpoint
+    const angleSteps = 12; // Test 12 different angles for better coverage
+    const distanceSteps = 4; // Test 4 different distances
     
-    targetCameraPosition.set(
-      armTarget.x + cameraHorizontalDist * cameraOffsetX,
-      cameraHeight,
-      armTarget.z + cameraHorizontalDist * cameraOffsetZ
-    );
+    for (let angleStep = 0; angleStep < angleSteps; angleStep++) {
+      const azimuth = (angleStep / angleSteps) * Math.PI * 2; // Full circle
+      
+      for (let distStep = 0; distStep < distanceSteps; distStep++) {
+        const testDistance = baseCameraDistance * (0.7 + distStep * 0.15); // 0.7x to 1.15x base distance
+        
+        // Calculate camera position at this angle and distance
+        const testCameraHeight = armTarget.y + testDistance * Math.sin(baseCameraAngle);
+        const testHorizontalDist = testDistance * Math.cos(baseCameraAngle);
+        const testCameraX = armTarget.x + testHorizontalDist * Math.cos(azimuth);
+        const testCameraZ = armTarget.z + testHorizontalDist * Math.sin(azimuth);
+        const testCameraY = testCameraHeight;
+        
+        // Calculate distance from camera to arm plane
+        const testHeightDiff = testCameraY - armTarget.y;
+        const testCameraToPlaneDist = testHeightDiff / Math.sin(baseCameraAngle);
+        
+        // Calculate FOV
+        const horizontalFov = 2 * Math.atan(tanHalfFov * aspect);
+        const tanHalfHorizontalFov = Math.tan(horizontalFov / 2);
+        
+        // Calculate visible dimensions on the arm plane (at zoom = 1.0)
+        const visibleWidthOnPlane = 2 * testCameraToPlaneDist * tanHalfHorizontalFov;
+        const visibleHeightOnPlane = 2 * testCameraToPlaneDist * tanHalfFov;
+        
+        // Calculate required zoom to fit the bounding box
+        const zoomForWidth = visibleWidthOnPlane / boxWidth;
+        const zoomForHeight = visibleHeightOnPlane / boxHeight;
+        const boxDiagonal = Math.sqrt(boxWidth * boxWidth + boxHeight * boxHeight);
+        const visibleDiagonal = Math.sqrt(visibleWidthOnPlane * visibleWidthOnPlane + visibleHeightOnPlane * visibleHeightOnPlane);
+        const zoomForDiagonal = visibleDiagonal / boxDiagonal;
+        
+        // Use the most restrictive zoom (smallest = most zoomed out needed)
+        let testZoom = Math.min(zoomForWidth, zoomForHeight, zoomForDiagonal);
+        
+        // Apply minimal safety margin (1% for maximum zoom)
+        testZoom = testZoom * 0.99;
+        
+        // Clamp zoom to reasonable range
+        const maxZoom = isPortrait ? 5.0 : 5.5; // Increased max zoom for better visibility
+        const minZoom = 1.0;
+        testZoom = Math.max(minZoom, Math.min(maxZoom, testZoom));
+        
+        // Keep the position that gives us the highest zoom (most zoomed in)
+        if (testZoom > bestZoom) {
+          bestZoom = testZoom;
+          bestCameraPos.set(testCameraX, testCameraY, testCameraZ);
+        }
+      }
+    }
     
-    // Calculate distance from camera to the plane at arm Y position
-    const heightDiff = cameraHeight - armTarget.y;
-    const cameraToPlaneDistance = heightDiff / Math.sin(cameraAngle);
+    // Set target camera position and zoom
+    targetCameraPosition.copy(bestCameraPos);
+    targetCameraZoom = bestZoom;
     
-    // Calculate horizontal and vertical FOV
-    const horizontalFov = 2 * Math.atan(tanHalfFov * aspect);
-    const tanHalfHorizontalFov = Math.tan(horizontalFov / 2);
-    
-    // Calculate visible dimensions on the watch face plane (at zoom = 1.0)
-    const visibleWidthOnPlane = 2 * cameraToPlaneDistance * tanHalfHorizontalFov;
-    const visibleHeightOnPlane = 2 * cameraToPlaneDistance * tanHalfFov;
-    
-    // Calculate required zoom to fit the bounding box
-    // zoom = visibleSize / requiredSize
-    const zoomForWidth = visibleWidthOnPlane / boxWidth;
-    const zoomForHeight = visibleHeightOnPlane / boxHeight;
-    
-    // Also check diagonal case - when arm is at 45 degrees
-    // The diagonal of the bounding box
-    const boxDiagonal = Math.sqrt(boxWidth * boxWidth + boxHeight * boxHeight);
-    const visibleDiagonal = Math.sqrt(visibleWidthOnPlane * visibleWidthOnPlane + visibleHeightOnPlane * visibleHeightOnPlane);
-    const zoomForDiagonal = visibleDiagonal / boxDiagonal;
-    
-    // Use the most restrictive zoom (smallest = most zoomed out = safest)
-    // This ensures the entire bounding box fits in view
-    let requiredZoom = Math.min(zoomForWidth, zoomForHeight, zoomForDiagonal);
-    
-    // Apply small safety margin (2%) to ensure 100% visibility
-    requiredZoom = requiredZoom * 0.98;
-    
-    // Clamp zoom to reasonable range
-    const maxZoom = isPortrait ? 3.5 : 4.0;
-    const minZoom = 1.0;
-    requiredZoom = Math.max(minZoom, Math.min(maxZoom, requiredZoom));
-    
-    targetCameraZoom = requiredZoom;
-    
-    // Smoothly lerp camera position and zoom with eased interpolation
-    // Use slower, smoother interpolation for position
-    const positionLerpSpeed = cameraLerpSpeed * 0.8; // Even slower for position
+    // Smoothly lerp camera position and zoom
+    const positionLerpSpeed = cameraLerpSpeed * 0.8;
     camera.position.lerp(targetCameraPosition, positionLerpSpeed);
     
-    // Use smooth interpolation for zoom (slightly faster than position but still smooth)
     const zoomLerpSpeed = cameraLerpSpeed * 1.2;
     camera.zoom = THREE.MathUtils.lerp(camera.zoom, targetCameraZoom, zoomLerpSpeed);
     camera.updateProjectionMatrix();
     
-    // Move camera target to follow the forward tip of the seconds arm
-    // This creates a moving target that rotates with the arm, not fixed at center
+    // Move camera target to the midpoint of the seconds arm
     controls.target.lerp(armTarget, positionLerpSpeed);
     controls.update();
   }
