@@ -6,10 +6,8 @@ import { createWatchFace, createTextTexture } from './watch/watchFace.js';
 import { createWatchArms } from './watch/watchArms.js';
 import { setupCoordinateSystem } from './utils/coordinateSystem.js';
 
-// Initialize cubes array at the very top to prevent ReferenceError
-// This must be declared before any code that references it
-// Using var with immediate assignment to avoid TDZ issues in minified code
-var cubes = (function() { return []; })();
+// Initialize cubes array - using var for hoisting to avoid TDZ issues
+var cubes = [];
 
 // Coordinate system declaration (per CURSOR_RULES.md §6)
 // Right-handed, Y-up
@@ -1011,12 +1009,6 @@ function eulerToQuaternion(x, y, z) {
 
 // Animation loop
 function animate() {
-  // Safety check: ensure cubes array is initialized before proceeding
-  if (typeof cubes === 'undefined' || !Array.isArray(cubes)) {
-    requestAnimationFrame(animate);
-    return;
-  }
-  
   requestAnimationFrame(animate);
   
   // Update FPS counter
@@ -1475,20 +1467,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// Delay animate() call until DOM is ready and module is fully initialized
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    // Use setTimeout to ensure all module code is executed
-    setTimeout(() => {
-      animate();
-    }, 0);
-  });
-} else {
-  // DOM already loaded, but still delay to ensure module initialization
-  setTimeout(() => {
-    animate();
-  }, 0);
-}
+animate();
 
 // Handle window resize
 window.addEventListener('resize', () => {

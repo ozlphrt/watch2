@@ -2,15 +2,6 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default {
   base: '/watch2/',
-  build: {
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        hoist_funs: false,
-        hoist_vars: false,
-      }
-    }
-  },
   server: {
     port: 3000,
     open: true
