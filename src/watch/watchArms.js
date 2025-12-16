@@ -58,6 +58,10 @@ export function createWatchArms() {
   hourArmGroup.add(hourArm);
   group.add(hourArmGroup);
   
+  // Store references for animation (matching the order: second, minute, hour)
+  group.userData.secondHand = secondArmGroup;
+  group.userData.minuteHand = minuteArmGroup;
+  group.userData.hourHand = hourArmGroup;
+  
   return group;
 }
-

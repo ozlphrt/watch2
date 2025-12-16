@@ -1074,7 +1074,8 @@ function animate() {
   const targetSecondsRotation = baseRotationForSecond + secondsAccumulatedRotation;
   
   // Use lerp to smoothly approach the discrete target
-  let currentSecondsRotation = arms.children[0].rotation.y;
+  // Use userData references for reliability
+  let currentSecondsRotation = arms.userData.secondHand.rotation.y;
   
   // Normalize current rotation to the same cycle as target
   // Both should be in the range [accumulatedRotation - π, accumulatedRotation + π]
@@ -1117,9 +1118,10 @@ function animate() {
   const targetHoursRotation = Math.PI - (hours / 12) * Math.PI * 2;
   
   // Update visual arm rotations
-  arms.children[0].rotation.y = smoothedSecondsRotation;
-  arms.children[1].rotation.y = targetMinutesRotation;
-  arms.children[2].rotation.y = targetHoursRotation;
+  // Use userData references for reliability (these are groups, not individual meshes)
+  arms.userData.secondHand.rotation.y = smoothedSecondsRotation; // second hand group
+  arms.userData.minuteHand.rotation.y = targetMinutesRotation;   // minute hand group
+  arms.userData.hourHand.rotation.y = targetHoursRotation;      // hour hand group
   
   // Calculate arm midpoint for star visualization (always, not just mobile)
   // The seconds arm extends from center (0, 0.08, 0) to tip at distance 1.4 (armHalfLength)
