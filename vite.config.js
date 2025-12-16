@@ -2,7 +2,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default {
   // Use root base path for development, /watch2/ for production (GitHub Pages)
-  base: process.env.BASE_PATH || (process.env.NODE_ENV === 'production' ? '/watch2/' : '/'),
+  base: '/watch2/',
   server: {
     port: 3000,
     open: true
