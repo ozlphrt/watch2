@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { GUI } from 'lil-gui';
+import 'lil-gui/dist/lil-gui.css';
 import { createWatchFace, createTextTexture } from './watch/watchFace.js';
 import { createWatchArms } from './watch/watchArms.js';
 import { setupCoordinateSystem } from './utils/coordinateSystem.js';
