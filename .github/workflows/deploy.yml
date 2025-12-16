@@ -31,6 +31,7 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          BASE_PATH: /watch2/
           
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
