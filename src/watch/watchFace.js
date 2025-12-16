@@ -52,7 +52,8 @@ export function createWatchFace() {
   // Main watch face disc
   // Use CircleGeometry instead - creates a flat disc in XZ plane by default
   // Transform: local (disc in XY) → world (disc in XZ)
-  const faceGeometry = new THREE.CircleGeometry(3, 64); // Scaled up from 2 to 3
+  const watchFaceRadius = 3.0; // Store radius for gridlines
+  const faceGeometry = new THREE.CircleGeometry(watchFaceRadius, 64); // Scaled up from 2 to 3
   const faceMaterial = new THREE.MeshStandardMaterial({
     color: 0xf5f5f5,
     metalness: 0.1,
@@ -64,6 +65,49 @@ export function createWatchFace() {
   face.rotation.x = Math.PI / 2; // Transform: XY plane → XZ plane
   face.receiveShadow = true; // Watch face receives shadows
   group.add(face);
+  
+  // Gridlines on watch face
+  const gridMaterial = new THREE.LineBasicMaterial({ 
+    color: 0x888888, 
+    opacity: 0.6, 
+    transparent: true,
+    linewidth: 1,
+    depthWrite: false // Prevent z-fighting flickering
+  });
+  
+  // Radial gridlines (from center to edge, every 30 degrees)
+  // Position on watch face (Y=0) but add to group before text elements so they render behind
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const gridGeometry = new THREE.BufferGeometry();
+    const gridPoints = [
+      new THREE.Vector3(0, 0.0005, 0), // Start at center, slightly above watch face
+      new THREE.Vector3(Math.cos(angle) * watchFaceRadius, 0.0005, Math.sin(angle) * watchFaceRadius) // End at edge
+    ];
+    gridGeometry.setFromPoints(gridPoints);
+    const gridLine = new THREE.Line(gridGeometry, gridMaterial);
+    gridLine.renderOrder = -1; // Render before text elements
+    group.add(gridLine);
+  }
+  
+  // Concentric gridlines (circles at different radii) - further increased frequency, reduced thickness
+  // More circles for higher frequency: every 0.25 units
+  const concentricRadii = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 2.9]; // Many more circles
+  for (const radius of concentricRadii) {
+    const circleGeometry = new THREE.RingGeometry(radius - 0.002, radius + 0.002, 64); // Very thin rings (0.004 total width)
+    const circleMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x888888, 
+      opacity: 0.6, 
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false // Prevent z-fighting flickering
+    });
+    const circle = new THREE.Mesh(circleGeometry, circleMaterial);
+    circle.rotation.x = -Math.PI / 2; // Rotate to lie flat in XZ plane
+    circle.position.y = 0.0005; // Slightly above watch face to prevent z-fighting, but below text (Y=0.001)
+    circle.renderOrder = -1; // Render before text elements
+    group.add(circle);
+  }
   
   // Major ticks (at hour positions) - 12 ticks
   // Ticks stand vertically (along Y-axis) on the watch face, in YZ plane (green/blue surface)
@@ -144,7 +188,7 @@ export function createWatchFace() {
     const x = Math.cos(angle) * numberRadius;
     const z = Math.sin(angle) * numberRadius;
     
-    textMesh.position.set(x, 0.09, z); // Scaled up from 0.06
+    textMesh.position.set(x, 0.001, z); // Position on watch face (Y=0.001 to avoid z-fighting)
     // Rotate plane to lie flat in XZ plane (same as watch face)
     textMesh.rotation.x = -Math.PI / 2; // Rotate from XY to XZ plane
     
@@ -182,7 +226,7 @@ export function createWatchFace() {
   // Use a slightly wider plane (1.2:1 ratio) to prevent clipping while minimizing stretching
   const dayPlane = new THREE.PlaneGeometry(0.6, 0.5); // Slightly wider to prevent clipping, minimal stretching
   const dayMesh = new THREE.Mesh(dayPlane, dayMaterial);
-  dayMesh.position.set(1.3, 0.12, 0); // To the left of 3 o'clock, aligned horizontally
+  dayMesh.position.set(1.3, 0.001, 0); // To the left of 3 o'clock, on watch face (Y=0.001 to avoid z-fighting)
   dayMesh.rotation.x = -Math.PI / 2; // Rotate to lie flat in XZ plane (horizontal)
   dayMesh.rotation.y = 0; // No Y rotation - text faces straight
   dayMesh.rotation.z = 0; // No Z rotation - text is straight
@@ -198,7 +242,7 @@ export function createWatchFace() {
   });
   const datePlane = new THREE.PlaneGeometry(0.45, 0.45); // Larger square plane for date
   const dateMesh = new THREE.Mesh(datePlane, dateMaterial);
-  dateMesh.position.set(1.8, 0.12, 0); // Bit more spacing from MON
+  dateMesh.position.set(1.8, 0.001, 0); // Bit more spacing from MON, on watch face (Y=0.001 to avoid z-fighting)
   dateMesh.rotation.x = -Math.PI / 2; // Rotate to lie flat in XZ plane (horizontal)
   dateMesh.rotation.y = 0; // No Y rotation - text faces straight
   dateMesh.rotation.z = 0; // No Z rotation - text is straight
@@ -216,7 +260,7 @@ export function createWatchFace() {
   });
   const cubeCounterPlane = new THREE.PlaneGeometry(0.8, 0.8); // Bigger size
   const cubeCounterMesh = new THREE.Mesh(cubeCounterPlane, cubeCounterMaterial);
-  cubeCounterMesh.position.set(-1.25, 0.12, 0); // Midpoint between center and 9 o'clock
+  cubeCounterMesh.position.set(-1.25, 0.001, 0); // Midpoint between center and 9 o'clock, on watch face (Y=0.001 to avoid z-fighting)
   cubeCounterMesh.rotation.x = -Math.PI / 2; // Rotate to lie flat in XZ plane (horizontal)
   cubeCounterMesh.rotation.y = 0;
   cubeCounterMesh.rotation.z = 0;

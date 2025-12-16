@@ -58,8 +58,9 @@ const isMobile = isMobileDevice();
 // Mobile camera auto-adjustment variables - using var to avoid TDZ issues in minified code
 var targetCameraPosition = new THREE.Vector3();
 var targetCameraZoom = 1.7;
-var cameraLerpSpeed = 0.03; // Slower, smoother camera movement
+var cameraLerpSpeed = 0.01; // Very slow, very smooth camera movement
 var lastCameraAdjustSecond = -1; // Track when camera was last adjusted
+var cameraUpdateInterval = 10; // Update camera position every 10 seconds for smoother motion
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -71,18 +72,15 @@ const camera = new THREE.PerspectiveCamera(
 
 // Camera initial setup - will be dynamically adjusted on mobile
 if (isMobile) {
-  const aspect = window.innerWidth / window.innerHeight;
-  const isPortrait = aspect < 1;
-  
-  if (isPortrait) {
-    camera.position.set(0, 3.0, 4.2);
-    camera.zoom = 1.5;
-  } else {
-    camera.position.set(0, 2.8, 4.0);
-    camera.zoom = 1.8;
-  }
-  targetCameraPosition.copy(camera.position);
-  targetCameraZoom = camera.zoom;
+  // Don't set fixed camera position on mobile - let animate loop calculate optimal position
+  // Set initial target position to a reasonable starting point, will be updated immediately
+  targetCameraPosition.set(0, 1.8, 0); // Further reduced to bring camera closer to watch face
+  targetCameraZoom = 1.5;
+  // Copy to actual camera - will be overridden in first animate frame
+  camera.position.copy(targetCameraPosition);
+  camera.zoom = targetCameraZoom;
+  // Set fixed camera orientation (no rotation)
+  camera.up.set(0, 1, 0);
 } else {
   camera.position.set(-0.3, 3.3, 2.7);
   camera.zoom = 1.7;
@@ -108,17 +106,33 @@ gridHelper.visible = false; // Default: hidden
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-  // Mobile: target will be set dynamically in animate loop to follow arm midpoint; Desktop: keep original offset
+  // Mobile: disable OrbitControls to allow manual camera control; Desktop: keep original offset
   if (isMobile) {
-    // Initial target will be set in first animate frame based on arm position
+    // Disable OrbitControls on mobile so our manual camera positioning works
+    controls.enabled = false;
+    // Don't set target on mobile - camera will use lookAt directly
   } else {
     controls.target.set(-0.2, 0.5, 1.3);
+    controls.update();
   }
-controls.update();
 
 // Watch face (at origin, Y=0)
 const watchFace = createWatchFace();
 scene.add(watchFace);
+
+// Create yellow star to visualize camera lookAt target
+let cameraTargetStar = null;
+// Create a yellow star using octahedron geometry (scaled down to almost invisible)
+const starGeometry = new THREE.OctahedronGeometry(0.02, 0); // Reduced from 0.15 to 0.02
+const starMaterial = new THREE.MeshStandardMaterial({ 
+  color: 0xffff00, // Yellow
+  emissive: 0xffff00,
+  emissiveIntensity: 0.3, // Reduced from 0.8 for less visibility
+  transparent: false
+});
+cameraTargetStar = new THREE.Mesh(starGeometry, starMaterial);
+cameraTargetStar.position.set(0, 0.08, 0); // Initial position at watch center
+scene.add(cameraTargetStar);
 
 // Track last day/date to avoid unnecessary texture updates
 let lastDay = -1;
@@ -587,14 +601,13 @@ var cameraControllers = {
   fov: null
 };
 
-if (!isMobile) {
-  gui = new GUI({ title: 'Debug Panel', autoPlace: false });
-  gui.close(); // Collapse debug panel by default
-  guiContainer = document.createElement('div');
-  guiContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 1000;';
-  document.body.appendChild(guiContainer);
-  guiContainer.appendChild(gui.domElement);
-}
+// Debug panel - disabled
+// gui = new GUI({ title: 'Debug Panel', autoPlace: false });
+// gui.close(); // Collapse debug panel by default
+// guiContainer = document.createElement('div');
+// guiContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 1000;';
+// document.body.appendChild(guiContainer);
+// guiContainer.appendChild(gui.domElement);
 
 // GUI parameter objects (defined before GUI creation)
 const cameraParams = {
@@ -630,7 +643,7 @@ const cubesParams = {
 };
 
 // Only create GUI folders and controllers on desktop
-if (!isMobile && gui) {
+if (false && gui) {
   // Camera folder
   const cameraFolder = gui.addFolder('Camera');
   
@@ -963,30 +976,10 @@ function updateCubeSizes() {
 // cameraControllers is now declared earlier, before GUI creation
 
 
-// FPS and cube count display at top right
+// FPS tracking (for internal use, not displayed)
 let fps = 0;
 let frameCount = 0;
 let lastTime = performance.now();
-let statsElement = null;
-
-// Create stats display element (cube count and FPS)
-statsElement = document.createElement('div');
-statsElement.style.cssText = `
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  color: white;
-  font-family: monospace;
-  font-size: 11px;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 4px 8px;
-  border-radius: 3px;
-  z-index: 1000;
-  pointer-events: none;
-  line-height: 1.3;
-`;
-statsElement.innerHTML = 'Cubes: 0<br>FPS: 60';
-document.body.appendChild(statsElement);
 
 
 // Easing function: ease in and out (smooth acceleration and deceleration)
@@ -1026,15 +1019,11 @@ function animate() {
     lastTime = currentTime;
   }
   
-  // Update stats display (cube count and FPS)
-  if (statsElement && Array.isArray(cubes)) {
-    const currentCubeCount = cubes.length;
-    statsElement.innerHTML = `Cubes: ${currentCubeCount}<br>FPS: ${fps}`;
+  
+  // Update controls (only on desktop, mobile uses manual camera control)
+  if (!isMobile) {
+    controls.update();
   }
-  
-  
-  // Update controls
-  controls.update();
   
   // Update watch arms rotation first
   const now = new Date();
@@ -1132,120 +1121,199 @@ function animate() {
   arms.children[1].rotation.y = targetMinutesRotation;
   arms.children[2].rotation.y = targetHoursRotation;
   
-  // Mobile: Dynamically zoom in/out to ensure seconds arm is 100% visible with maximum zoom
+  // Calculate arm midpoint for star visualization (always, not just mobile)
+  // The seconds arm extends from center (0, 0.08, 0) to tip at distance 1.4 (armHalfLength)
+  // Move star further toward tail end (closer to tip, further from center)
+  const secondArmLength = 2.8;
+  const armHalfLength = secondArmLength / 2; // 1.4 - distance from center to tip
+  const armY = 0.08;
+  // Calculate tip position (at distance 1.4 from center in the direction of rotation)
+  const tipX = Math.sin(smoothedSecondsRotation) * armHalfLength;
+  const tipZ = Math.cos(smoothedSecondsRotation) * armHalfLength;
+  // Position star at 85% of the way from center to tip (much closer to tail end)
+  // This gives us a point at 1.19 from center (0.85 of 1.4)
+  const midpointRatio = 0.85; // 85% toward tip (was 0.5 for true midpoint, 0.75 previously)
+  const armMidpointX = tipX * midpointRatio; // = sin(rotation) * 1.05
+  const armMidpointZ = tipZ * midpointRatio; // = cos(rotation) * 1.05
+  
+  // Update yellow star position to show where camera should be looking (always update)
+  if (cameraTargetStar) {
+    cameraTargetStar.position.set(armMidpointX, armY, armMidpointZ);
+  }
+  
+  // Camera should always look at the arm midpoint (use the same values as the star)
+  // This applies to all devices, not just mobile
+  // IMPORTANT: Disable OrbitControls target updates on desktop too, so lookAt works
+  if (!isMobile && controls.enabled) {
+    controls.enabled = false; // Disable OrbitControls so our lookAt works
+  }
+  camera.up.set(0, 1, 0); // Y-up
+  camera.lookAt(armMidpointX, armY, armMidpointZ);
+  camera.updateMatrix();
+  
+  // Mobile: Camera positioning - clean rewrite
+  // Requirements:
+  // 1. Camera always targets yellow star (arm midpoint) - handled above with lookAt
+  // 2. Camera positions in 10-2 area (top half of watch)
+  // 3. Seconds arm must be 100% visible at all times
+  // 4. Maximize zoom while maintaining visibility
+  // 5. Update camera position every 10 seconds for smoother motion
   if (isMobile) {
-    const secondArmLength = 2.8;
-    const armHalfLength = secondArmLength / 2; // Arm extends from -1.4 to +1.4 from center
-    const padding = 0.3; // Minimal padding for maximum zoom
+    // Only recalculate camera position every 10 seconds for smoother motion
+    const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+    const shouldUpdateCamera = (currentTime % cameraUpdateInterval === 0) && (currentTime !== lastCameraAdjustSecond);
     
-    // Arm Y position
+    if (shouldUpdateCamera) {
+      lastCameraAdjustSecond = currentTime;
+    const secondArmLength = 2.8;
+    const armHalfLength = secondArmLength / 2;
     const armY = 0.08;
     
-    // Calculate camera parameters
+    // Calculate arm bounding box
+    const tip1X = -Math.sin(smoothedSecondsRotation) * armHalfLength;
+    const tip1Z = -Math.cos(smoothedSecondsRotation) * armHalfLength;
+    const tip2X = tipX;
+    const tip2Z = tipZ;
+    const padding = 0.1;
+    const armMinX = Math.min(tip1X, tip2X) - padding;
+    const armMaxX = Math.max(tip1X, tip2X) + padding;
+    const armMinZ = Math.min(tip1Z, tip2Z) - padding;
+    const armMaxZ = Math.max(tip1Z, tip2Z) + padding;
+    const armWidth = armMaxX - armMinX;
+    const armHeight = armMaxZ - armMinZ;
+    
+    // Camera parameters
     const aspect = window.innerWidth / window.innerHeight;
     const fovRad = (camera.fov * Math.PI) / 180;
     const tanHalfFov = Math.tan(fovRad / 2);
     const isPortrait = aspect < 1;
+    const fixedCameraAngle = isPortrait ? Math.PI / 4.8 : Math.PI / 5.0;
     
-    // Calculate current arm tip positions (both ends of the arm)
-    // Arm extends from -armHalfLength to +armHalfLength along its axis
-    const currentTip1X = -Math.sin(smoothedSecondsRotation) * armHalfLength;
-    const currentTip1Z = -Math.cos(smoothedSecondsRotation) * armHalfLength;
-    const currentTip2X = Math.sin(smoothedSecondsRotation) * armHalfLength;
-    const currentTip2Z = Math.cos(smoothedSecondsRotation) * armHalfLength;
+    // Target area: numbers 10-2 (top half)
+    // Camera should be positioned OUTSIDE the edge of the watch face, looking inward
+    // Watch face is at Y=0, radius 3.0, centered at (0, 0, 0)
+    // Numbers are at radius 2.5 from center
+    const watchFaceRadius = 3.0;
+    const numberRadius = 2.5;
+    const preferredAngle = Math.PI / 2; // Number 12 direction (north, -Z in our system, but +Z is up)
     
-    // Calculate the midpoint of the seconds arm (center point between the two tips)
-    const armMidpointX = (currentTip1X + currentTip2X) / 2;
-    const armMidpointZ = (currentTip1Z + currentTip2Z) / 2;
-    const armTarget = new THREE.Vector3(armMidpointX, armY, armMidpointZ);
+    // Camera should be positioned at or slightly outside the watch face edge
+    // Position camera at the perimeter, looking inward toward the yellow star
+    const cameraDistanceFromCenter = watchFaceRadius + 0.2; // Slightly outside watch face edge (3.2)
+    const preferredDirX = Math.cos(preferredAngle); // 0 (pointing north)
+    const preferredDirZ = Math.sin(preferredAngle); // 1 (pointing north)
     
-    // Calculate bounding box of the arm at current rotation (only arm tips, no center reference)
-    const minX = Math.min(currentTip1X, currentTip2X) - padding;
-    const maxX = Math.max(currentTip1X, currentTip2X) + padding;
-    const minZ = Math.min(currentTip1Z, currentTip2Z) - padding;
-    const maxZ = Math.max(currentTip1Z, currentTip2Z) + padding;
+    // Camera height - raised a tiny bit more
+    const baseHeight = 1.4; // Raised from 1.3 to move camera slightly higher
+    const heightSteps = 3;
+    const heightRange = 0.3; // Reduced range
     
-    const boxWidth = maxX - minX;
-    const boxHeight = maxZ - minZ;
-    
-    // Calculate optimal camera position and zoom to keep arm 100% visible with max zoom
-    // Test multiple camera positions to find the one that maximizes zoom
-    const baseCameraDistance = 4.5;
-    const baseCameraAngle = isPortrait ? Math.PI / 4.8 : Math.PI / 5.0; // ~37-36 degrees
+    // Position search - constrain to 10-2 area (top half)
+    // Calculate range for 10-2 area: numbers 10-2 span from angle π/6 to 5π/6
+    const number2Angle = Math.PI / 6; // 2 o'clock (30 degrees)
+    const number10Angle = 5 * Math.PI / 6; // 10 o'clock (150 degrees)
+    const gridSteps = 16;
+    const maxAngleOffset = Math.PI / 6; // Allow ±30 degrees from preferred angle
+    const distanceVariation = 0.3; // Allow camera to move slightly closer/farther from edge
     
     let bestZoom = 1.0;
-    let bestCameraPos = new THREE.Vector3();
+    let bestPos = new THREE.Vector3();
     
-    // Test different camera angles (azimuth) around the arm midpoint
-    const angleSteps = 12; // Test 12 different angles for better coverage
-    const distanceSteps = 4; // Test 4 different distances
-    
-    for (let angleStep = 0; angleStep < angleSteps; angleStep++) {
-      const azimuth = (angleStep / angleSteps) * Math.PI * 2; // Full circle
+    // Search for best camera position
+    for (let h = 0; h < heightSteps; h++) {
+      const testHeight = baseHeight + (h / (heightSteps - 1) - 0.5) * 2 * heightRange;
       
-      for (let distStep = 0; distStep < distanceSteps; distStep++) {
-        const testDistance = baseCameraDistance * (0.7 + distStep * 0.15); // 0.7x to 1.15x base distance
-        
-        // Calculate camera position at this angle and distance
-        const testCameraHeight = armTarget.y + testDistance * Math.sin(baseCameraAngle);
-        const testHorizontalDist = testDistance * Math.cos(baseCameraAngle);
-        const testCameraX = armTarget.x + testHorizontalDist * Math.cos(azimuth);
-        const testCameraZ = armTarget.z + testHorizontalDist * Math.sin(azimuth);
-        const testCameraY = testCameraHeight;
-        
-        // Calculate distance from camera to arm plane
-        const testHeightDiff = testCameraY - armTarget.y;
-        const testCameraToPlaneDist = testHeightDiff / Math.sin(baseCameraAngle);
-        
-        // Calculate FOV
-        const horizontalFov = 2 * Math.atan(tanHalfFov * aspect);
-        const tanHalfHorizontalFov = Math.tan(horizontalFov / 2);
-        
-        // Calculate visible dimensions on the arm plane (at zoom = 1.0)
-        const visibleWidthOnPlane = 2 * testCameraToPlaneDist * tanHalfHorizontalFov;
-        const visibleHeightOnPlane = 2 * testCameraToPlaneDist * tanHalfFov;
-        
-        // Calculate required zoom to fit the bounding box
-        const zoomForWidth = visibleWidthOnPlane / boxWidth;
-        const zoomForHeight = visibleHeightOnPlane / boxHeight;
-        const boxDiagonal = Math.sqrt(boxWidth * boxWidth + boxHeight * boxHeight);
-        const visibleDiagonal = Math.sqrt(visibleWidthOnPlane * visibleWidthOnPlane + visibleHeightOnPlane * visibleHeightOnPlane);
-        const zoomForDiagonal = visibleDiagonal / boxDiagonal;
-        
-        // Use the most restrictive zoom (smallest = most zoomed out needed)
-        let testZoom = Math.min(zoomForWidth, zoomForHeight, zoomForDiagonal);
-        
-        // Apply minimal safety margin (1% for maximum zoom)
-        testZoom = testZoom * 0.99;
-        
-        // Clamp zoom to reasonable range
-        const maxZoom = isPortrait ? 5.0 : 5.5; // Increased max zoom for better visibility
-        const minZoom = 1.0;
-        testZoom = Math.max(minZoom, Math.min(maxZoom, testZoom));
-        
-        // Keep the position that gives us the highest zoom (most zoomed in)
-        if (testZoom > bestZoom) {
-          bestZoom = testZoom;
-          bestCameraPos.set(testCameraX, testCameraY, testCameraZ);
+      for (let x = 0; x < gridSteps; x++) {
+        for (let z = 0; z < gridSteps; z++) {
+          // Calculate angle offset from preferred direction (4-8 area)
+          const angleOffsetX = (x / (gridSteps - 1) - 0.5) * 2 * maxAngleOffset;
+          const distanceOffset = 1.0 - (z / (gridSteps - 1)) * distanceVariation; // Distance from edge (1.0) to slightly closer (0.7)
+          
+          // Calculate camera position at watch face edge (outside perimeter)
+          // Position camera in 4-8 area direction, at watch face edge
+          const testAngle = preferredAngle + angleOffsetX;
+          
+          // Clamp angle to stay between number 10 and 2 directions (top half)
+          const testAngleClamped = Math.max(number2Angle, Math.min(number10Angle, testAngle));
+          
+          // Position camera at edge of watch face (outside perimeter)
+          const finalTestX = Math.cos(testAngleClamped) * cameraDistanceFromCenter * distanceOffset;
+          const finalTestZ = Math.sin(testAngleClamped) * cameraDistanceFromCenter * distanceOffset;
+          
+          const testY = armY + testHeight;
+          
+          // Check if arm fits in view
+          // Calculate distance from camera to watch face plane (Y=0)
+          const cameraToPlane = testHeight / Math.sin(fixedCameraAngle);
+          const horizontalFov = 2 * Math.atan(tanHalfFov * aspect);
+          const tanHalfH = Math.tan(horizontalFov / 2);
+          const visibleW = 2 * cameraToPlane * tanHalfH;
+          const visibleH = 2 * cameraToPlane * tanHalfFov;
+          
+          // Project camera position onto watch face plane to check visibility
+          // Camera is at (finalTestX, testY, finalTestZ), looking inward toward center
+          // The visible area on the watch face is centered at the projection of camera position
+          const cameraProjectionX = finalTestX;
+          const cameraProjectionZ = finalTestZ;
+          
+          const safetyMargin = 0.1;
+          const viewMinX = cameraProjectionX - visibleW / 2 + safetyMargin;
+          const viewMaxX = cameraProjectionX + visibleW / 2 - safetyMargin;
+          const viewMinZ = cameraProjectionZ - visibleH / 2 + safetyMargin;
+          const viewMaxZ = cameraProjectionZ + visibleH / 2 - safetyMargin;
+          
+          if (armMinX >= viewMinX && armMaxX <= viewMaxX && 
+              armMinZ >= viewMinZ && armMaxZ <= viewMaxZ) {
+            const zoomW = visibleW / armWidth;
+            const zoomH = visibleH / armHeight;
+            const testZoom = Math.min(zoomW, zoomH) * 0.95; // 5% safety
+            
+            // Prefer positions closer to preferred angle (number 12 direction)
+            const angleDiff = Math.abs(testAngle - preferredAngle);
+            const preferBonus = angleDiff < Math.PI / 6 ? (1.0 - angleDiff / (Math.PI / 6)) * 0.3 : 0;
+            
+            const finalZoom = testZoom + preferBonus;
+            const clampedZoom = Math.max(1.0, Math.min(isPortrait ? 10.0 : 12.0, finalZoom));
+            
+            if (clampedZoom > bestZoom) {
+              bestZoom = clampedZoom;
+              bestPos.set(finalTestX, testY, finalTestZ);
+            }
+          }
         }
       }
     }
     
-    // Set target camera position and zoom
-    targetCameraPosition.copy(bestCameraPos);
-    targetCameraZoom = bestZoom;
+    // Fallback - position at watch face edge in 10-2 area (top half)
+    if (bestZoom === 1.0) {
+      // Position camera at watch face edge, in number 12 direction
+      bestPos.set(
+        Math.cos(preferredAngle) * cameraDistanceFromCenter,
+        armY + baseHeight,
+        Math.sin(preferredAngle) * cameraDistanceFromCenter
+      );
+      bestZoom = 1.5;
+    }
     
-    // Smoothly lerp camera position and zoom
-    const positionLerpSpeed = cameraLerpSpeed * 0.8;
-    camera.position.lerp(targetCameraPosition, positionLerpSpeed);
+    // Ensure camera stays in 10-2 area - clamp angle and keep at watch face edge
+    const currentAngle = Math.atan2(bestPos.z, bestPos.x);
+    const clampedAngle = Math.max(number2Angle, Math.min(number10Angle, currentAngle));
+    const currentDist = Math.sqrt(bestPos.x ** 2 + bestPos.z ** 2);
+    // Keep camera at or slightly outside watch face edge (radius 3.0)
+    const clampedDist = Math.max(watchFaceRadius * 0.9, Math.min(watchFaceRadius + 0.5, currentDist));
     
-    const zoomLerpSpeed = cameraLerpSpeed * 1.2;
-    camera.zoom = THREE.MathUtils.lerp(camera.zoom, targetCameraZoom, zoomLerpSpeed);
+    bestPos.x = Math.cos(clampedAngle) * clampedDist;
+    bestPos.z = Math.sin(clampedAngle) * clampedDist;
+    
+      // Update camera target position and zoom (will be smoothly lerped to)
+      targetCameraPosition.copy(bestPos);
+      targetCameraZoom = bestZoom;
+    }
+    
+    // Always smoothly lerp camera position and zoom every frame (even when not recalculating)
+    camera.position.lerp(targetCameraPosition, cameraLerpSpeed * 0.5);
+    camera.zoom = THREE.MathUtils.lerp(camera.zoom, targetCameraZoom, cameraLerpSpeed * 0.6);
     camera.updateProjectionMatrix();
-    
-    // Move camera target to the midpoint of the seconds arm
-    controls.target.lerp(armTarget, positionLerpSpeed);
-    controls.update();
   }
   
   // Update physics bodies for arms BEFORE physics step (so they can push cubes)
@@ -1399,39 +1467,41 @@ function animate() {
     }
   }
   
-  // Update lil-gui camera controls to reflect current camera state
+  // Update lil-gui camera controls to reflect current camera state (desktop only)
   // Only update if values differ to avoid triggering onChange callbacks
-  if (cameraControllers.positionX && Math.abs(cameraParams['Camera X'] - camera.position.x) > 0.01) {
-    cameraParams['Camera X'] = camera.position.x;
-    cameraControllers.positionX.updateDisplay();
-  }
-  if (cameraControllers.positionY && Math.abs(cameraParams['Camera Y'] - camera.position.y) > 0.01) {
-    cameraParams['Camera Y'] = camera.position.y;
-    cameraControllers.positionY.updateDisplay();
-  }
-  if (cameraControllers.positionZ && Math.abs(cameraParams['Camera Z'] - camera.position.z) > 0.01) {
-    cameraParams['Camera Z'] = camera.position.z;
-    cameraControllers.positionZ.updateDisplay();
-  }
-  if (cameraControllers.targetX && Math.abs(cameraParams['Target X'] - controls.target.x) > 0.01) {
-    cameraParams['Target X'] = controls.target.x;
-    cameraControllers.targetX.updateDisplay();
-  }
-  if (cameraControllers.targetY && Math.abs(cameraParams['Target Y'] - controls.target.y) > 0.01) {
-    cameraParams['Target Y'] = controls.target.y;
-    cameraControllers.targetY.updateDisplay();
-  }
-  if (cameraControllers.targetZ && Math.abs(cameraParams['Target Z'] - controls.target.z) > 0.01) {
-    cameraParams['Target Z'] = controls.target.z;
-    cameraControllers.targetZ.updateDisplay();
-  }
-  if (cameraControllers.zoom && Math.abs(cameraParams['Zoom'] - camera.zoom) > 0.01) {
-    cameraParams['Zoom'] = camera.zoom;
-    cameraControllers.zoom.updateDisplay();
-  }
-  if (cameraControllers.fov && Math.abs(cameraParams['FOV'] - camera.fov) > 0.1) {
-    cameraParams['FOV'] = camera.fov;
-    cameraControllers.fov.updateDisplay();
+  if (!isMobile) {
+    if (cameraControllers.positionX && Math.abs(cameraParams['Camera X'] - camera.position.x) > 0.01) {
+      cameraParams['Camera X'] = camera.position.x;
+      cameraControllers.positionX.updateDisplay();
+    }
+    if (cameraControllers.positionY && Math.abs(cameraParams['Camera Y'] - camera.position.y) > 0.01) {
+      cameraParams['Camera Y'] = camera.position.y;
+      cameraControllers.positionY.updateDisplay();
+    }
+    if (cameraControllers.positionZ && Math.abs(cameraParams['Camera Z'] - camera.position.z) > 0.01) {
+      cameraParams['Camera Z'] = camera.position.z;
+      cameraControllers.positionZ.updateDisplay();
+    }
+    if (cameraControllers.targetX && Math.abs(cameraParams['Target X'] - controls.target.x) > 0.01) {
+      cameraParams['Target X'] = controls.target.x;
+      cameraControllers.targetX.updateDisplay();
+    }
+    if (cameraControllers.targetY && Math.abs(cameraParams['Target Y'] - controls.target.y) > 0.01) {
+      cameraParams['Target Y'] = controls.target.y;
+      cameraControllers.targetY.updateDisplay();
+    }
+    if (cameraControllers.targetZ && Math.abs(cameraParams['Target Z'] - controls.target.z) > 0.01) {
+      cameraParams['Target Z'] = controls.target.z;
+      cameraControllers.targetZ.updateDisplay();
+    }
+    if (cameraControllers.zoom && Math.abs(cameraParams['Zoom'] - camera.zoom) > 0.01) {
+      cameraParams['Zoom'] = camera.zoom;
+      cameraControllers.zoom.updateDisplay();
+    }
+    if (cameraControllers.fov && Math.abs(cameraParams['FOV'] - camera.fov) > 0.1) {
+      cameraParams['FOV'] = camera.fov;
+      cameraControllers.fov.updateDisplay();
+    }
   }
   
   // Update day and date on watch face (only when changed)
@@ -1495,19 +1565,10 @@ window.addEventListener('resize', () => {
   const nowMobile = isMobileDevice();
   
   if (nowMobile) {
-    // On mobile, adjust camera based on current orientation
-    // Target will be set dynamically in animate loop based on arm position
-    const isPortrait = aspect < 1;
-    if (isPortrait) {
-      camera.position.set(0, 3.0, 4.2);
-      camera.zoom = 1.5;
-    } else {
-      camera.position.set(0, 2.8, 4.0);
-      camera.zoom = 1.8;
-    }
-    // Don't set target here - let animate loop handle it based on arm position
+    // On mobile, don't reset camera position - let the animate loop handle it dynamically
+    // The animate loop will adjust camera position and zoom based on arm position
+    // Just update the aspect ratio for the camera
     camera.updateProjectionMatrix();
-    controls.update();
   } else if (!nowMobile && wasMobile) {
     // Switched to desktop: restore original
     camera.position.set(-0.3, 3.3, 2.7);
