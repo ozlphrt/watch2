@@ -1,13 +1,21 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { GUI } from 'lil-gui'; // Using lil-gui (modern dat.GUI alternative) for better ES6 support
+import { GUI } from 'lil-gui';
 import { createWatchFace, createTextTexture } from './watch/watchFace.js';
 import { createWatchArms } from './watch/watchArms.js';
 import { setupCoordinateSystem } from './utils/coordinateSystem.js';
 
 // Initialize cubes array - using var for hoisting to avoid TDZ issues
 var cubes = [];
+
+// Parameter objects - declared early so they can be used in functions
+const cubeParams = {
+  'Base Color': '#ffffff',
+  'Metalness': 0.0,
+  'Roughness': 0.3,
+  'Roundness': 0.02
+};
 
 // Coordinate system declaration (per CURSOR_RULES.md §6)
 // Right-handed, Y-up
@@ -45,7 +53,7 @@ function createGradientBackground() {
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = createGradientBackground(); // Gradient background
-scene.fog = new THREE.FogExp2(0xa0a0b0, 0.03); // Exponential fog (color, density) - reduced
+scene.fog = new THREE.FogExp2(0xa0a0b0, 0); // Exponential fog (color, density)
 
 // Detect mobile device
 function isMobileDevice() {
@@ -109,7 +117,7 @@ controls.maxPolarAngle = Math.PI / 2.2; // Maximum angle (about 82 degrees from 
 // Enable controls for both mobile and desktop
 controls.enabled = true;
 // Set initial target (will be updated to yellow star in animate loop)
-controls.target.set(0, 0.08, 0);
+controls.target.set(-0.2, 0.5, 1.3);
 
 // Watch face (at origin, Y=0)
 const watchFace = createWatchFace();
@@ -136,6 +144,38 @@ let lastDate = -1;
 // Watch arms
 const arms = createWatchArms();
 scene.add(arms);
+
+// Store material references for GUI control (after objects are created)
+let watchFaceMaterial = null;
+let pinMaterial = null;
+let secondArmMaterial = null;
+let minuteArmMaterial = null;
+let hourArmMaterial = null;
+
+// Get material references from watch face and arms
+// Watch face material is on the first child (the face disc)
+if (watchFace && watchFace.children && watchFace.children.length > 0) {
+  const faceMesh = watchFace.children.find(child => child.material);
+  if (faceMesh && faceMesh.material) {
+    watchFaceMaterial = faceMesh.material;
+  }
+}
+// Pin material (central cylinder)
+if (watchFace && watchFace.userData && watchFace.userData.pinMaterial) {
+  pinMaterial = watchFace.userData.pinMaterial;
+}
+// Arm materials
+if (arms && arms.userData) {
+  if (arms.userData.secondHand && arms.userData.secondHand.children && arms.userData.secondHand.children.length > 0) {
+    secondArmMaterial = arms.userData.secondHand.children[0].material;
+  }
+  if (arms.userData.minuteHand && arms.userData.minuteHand.children && arms.userData.minuteHand.children.length > 0) {
+    minuteArmMaterial = arms.userData.minuteHand.children[0].material;
+  }
+  if (arms.userData.hourHand && arms.userData.hourHand.children && arms.userData.hourHand.children.length > 0) {
+    hourArmMaterial = arms.userData.hourHand.children[0].material;
+  }
+}
 
 // Physics setup
 let physicsWorld;
@@ -477,11 +517,14 @@ function spawnCube(randomY = true, isRedRepulsionCube = false) {
   const physicsProps = getPhysicsProperties(randomBaseMass);
   
   // Store physics properties in material for later retrieval
-  // Semi-shiny plastic: low metalness, medium-low roughness for semi-shiny appearance
+  // Use GUI-controlled material properties if available, otherwise defaults
+  const baseColor = cubeParams ? parseInt(cubeParams['Base Color'].replace('#', ''), 16) : color;
+  const metalness = cubeParams ? cubeParams['Metalness'] : 0.0;
+  const roughness = cubeParams ? cubeParams['Roughness'] : 0.3;
   const material = new THREE.MeshStandardMaterial({ 
-    color: color,
-    metalness: 0.0, // Plastic has no metalness
-    roughness: 0.3  // Lower roughness = more shiny (0.3 = semi-shiny plastic)
+    color: isRedRepulsionCube ? color : baseColor, // Keep red for repulsion cubes
+    metalness: metalness,
+    roughness: roughness
   });
   material.userData.friction = physicsProps.friction;
   material.userData.restitution = physicsProps.restitution;
@@ -542,11 +585,11 @@ function spawnInitialCubes(count = 300) {
 }
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+const ambientLight = new THREE.AmbientLight(0xffffff, 1);
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.78);
-directionalLight.position.set(5, 10, 5);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+directionalLight.position.set(1.3, 17.6, 8.3);
 directionalLight.castShadow = true;
 directionalLight.shadow.mapSize.width = 4096; // Increased for better quality
 directionalLight.shadow.mapSize.height = 4096; // Increased for better quality
@@ -580,31 +623,36 @@ let repulsionStrength = 5.0; // Strength of repulsion from red cube
 let redRepulsionCube = null; // Reference to the red repulsion cube
 const SPECIAL_CUBE_LIFETIME = 15000; // 15 seconds in milliseconds
 
-// Debug panel using lil-gui (dat.GUI style) - only on desktop
+// GUI - dat.GUI style interface (lil-gui) with sections
 let gui = null;
 let guiContainer = null;
+gui = new GUI({ title: 'Watch Controls', autoPlace: false });
+gui.close(); // Collapse by default
+guiContainer = document.createElement('div');
+guiContainer.id = 'watch-controls-gui';
+guiContainer.style.cssText = `
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  max-height: 85vh;
+  overflow-y: auto;
+  min-width: 380px;
+  width: auto;
+`;
+guiContainer.style.display = 'none'; // Start hidden
+document.body.appendChild(guiContainer);
+guiContainer.appendChild(gui.domElement);
 
-// Store controller references for real-time updates - must be declared before GUI creation
-var cameraControllers = {
-  positionX: null,
-  positionY: null,
-  positionZ: null,
-  targetX: null,
-  targetY: null,
-  targetZ: null,
-  zoom: null,
-  fov: null
-};
+// Keyboard shortcut to toggle GUI (ALT+CTRL+SHIFT+D)
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && e.altKey && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    guiContainer.style.display = guiContainer.style.display === 'none' ? 'block' : 'none';
+  }
+});
 
-// Debug panel - disabled
-// gui = new GUI({ title: 'Debug Panel', autoPlace: false });
-// gui.close(); // Collapse debug panel by default
-// guiContainer = document.createElement('div');
-// guiContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 1000;';
-// document.body.appendChild(guiContainer);
-// guiContainer.appendChild(gui.domElement);
-
-// GUI parameter objects (defined before GUI creation)
+// Parameter objects for GUI controls
 const cameraParams = {
   'Camera X': -0.3,
   'Camera Y': 3.3,
@@ -615,10 +663,38 @@ const cameraParams = {
   'Zoom': 1.7,
   'FOV': 101
 };
-const fogParams = { 'Fog Density': 0.03 };
+const fogParams = { 'Fog Density': 0 };
 const lightingParams = {
-  'Ambient Intensity': 0.75,
-  'Directional Intensity': 1.78
+  'Ambient Intensity': 1,
+  'Ambient Color': '#ffffff',
+  'Directional Intensity': 1.5,
+  'Directional Color': '#ffffff',
+  'Directional X': 1.3,
+  'Directional Y': 17.6,
+  'Directional Z': 8.3
+};
+const watchFaceParams = {
+  'Color': '#f5f5f5',
+  'Metalness': 0.04,
+  'Roughness': 0
+};
+// Pin uses same material as hour arm, so we use armParams for hour arm
+const pinParams = {
+  'Color': '#6e6e6e',
+  'Metalness': 0.0,
+  'Roughness': 0
+};
+// cubeParams moved to top of file (before spawnCube function)
+const armParams = {
+  'Second Color': '#ff6600',
+  'Second Metalness': 0.0,
+  'Second Roughness': 0,
+  'Minute Color': '#7d7d7d',
+  'Minute Metalness': 0.0,
+  'Minute Roughness': 0,
+  'Hour Color': '#6e6e6e',
+  'Hour Metalness': 0.0,
+  'Hour Roughness': 0
 };
 const animationParams = {
   'Seconds Lerp': 0.3,
@@ -631,36 +707,213 @@ const debugParams = {
 };
 const cubesParams = {
   'Cube Roundness': 0.03,
-  'Mass Variation': 10.0,
-  'Repulsion Strength': 5.0,
+  'Mass Variation': 10,
+  'Repulsion Strength': 5,
   'Cube Size Min': 0.05,
   'Cube Size Max': 0.25
 };
 
-// Only create GUI folders and controllers on desktop
-if (false && gui) {
-  // Camera folder
-  const cameraFolder = gui.addFolder('Camera');
-  
-  // Fog folder
-  const fogFolder = gui.addFolder('Fog');
-  fogFolder.add(fogParams, 'Fog Density', 0, 0.1, 0.001).onChange((val) => {
-    fogDensity = val;
-    scene.fog.density = val;
-  });
-  
-  // Lighting folder
+// Apply initial values to materials (after all params are declared)
+if (watchFaceMaterial) {
+  watchFaceMaterial.color.setHex(parseInt(watchFaceParams['Color'].replace('#', ''), 16));
+  watchFaceMaterial.metalness = watchFaceParams['Metalness'];
+  watchFaceMaterial.roughness = watchFaceParams['Roughness'];
+}
+
+if (secondArmMaterial) {
+  secondArmMaterial.color.setHex(parseInt(armParams['Second Color'].replace('#', ''), 16));
+  secondArmMaterial.metalness = armParams['Second Metalness'];
+  secondArmMaterial.roughness = armParams['Second Roughness'];
+}
+
+if (minuteArmMaterial) {
+  minuteArmMaterial.color.setHex(parseInt(armParams['Minute Color'].replace('#', ''), 16));
+  minuteArmMaterial.metalness = armParams['Minute Metalness'];
+  minuteArmMaterial.roughness = armParams['Minute Roughness'];
+}
+
+if (hourArmMaterial) {
+  hourArmMaterial.color.setHex(parseInt(armParams['Hour Color'].replace('#', ''), 16));
+  hourArmMaterial.metalness = armParams['Hour Metalness'];
+  hourArmMaterial.roughness = armParams['Hour Roughness'];
+}
+
+// Pin material should match hour arm material
+if (pinMaterial && hourArmMaterial) {
+  pinMaterial.color.copy(hourArmMaterial.color);
+  pinMaterial.metalness = hourArmMaterial.metalness;
+  pinMaterial.roughness = hourArmMaterial.roughness;
+}
+
+// Create GUI with dat.GUI style folders (sections)
+if (gui) {
+  // Lighting section
   const lightingFolder = gui.addFolder('Lighting');
-  lightingFolder.add(lightingParams, 'Ambient Intensity', 0, 2, 0.01).onChange((val) => {
-    ambientIntensity = val;
+  
+  // Ambient Light subfolder
+  const ambientFolder = lightingFolder.addFolder('Ambient Light');
+  ambientFolder.add(lightingParams, 'Ambient Intensity', 0, 2, 0.01).onChange((val) => {
     ambientLight.intensity = val;
   });
-  lightingFolder.add(lightingParams, 'Directional Intensity', 0, 2, 0.01).onChange((val) => {
-    directionalIntensity = val;
+  ambientFolder.addColor(lightingParams, 'Ambient Color').onChange((val) => {
+    ambientLight.color.setHex(parseInt(val.replace('#', ''), 16));
+  });
+  ambientFolder.close();
+  
+  // Directional Light subfolder
+  const directionalFolder = lightingFolder.addFolder('Directional Light');
+  directionalFolder.add(lightingParams, 'Directional Intensity', 0, 5, 0.01).onChange((val) => {
     directionalLight.intensity = val;
   });
+  directionalFolder.addColor(lightingParams, 'Directional Color').onChange((val) => {
+    directionalLight.color.setHex(parseInt(val.replace('#', ''), 16));
+  });
+  directionalFolder.add(lightingParams, 'Directional X', -20, 20, 0.1).onChange((val) => {
+    directionalLight.position.x = val;
+  });
+  directionalFolder.add(lightingParams, 'Directional Y', 0, 20, 0.1).onChange((val) => {
+    directionalLight.position.y = val;
+  });
+  directionalFolder.add(lightingParams, 'Directional Z', -20, 20, 0.1).onChange((val) => {
+    directionalLight.position.z = val;
+  });
+  directionalFolder.close();
+  lightingFolder.close();
+
+  // Materials section
+  const materialsFolder = gui.addFolder('Materials');
   
-  // Animation folder
+  // Watch Face subfolder
+  if (watchFaceMaterial) {
+    const watchFaceFolder = materialsFolder.addFolder('Watch Face');
+    watchFaceFolder.addColor(watchFaceParams, 'Color').onChange((val) => {
+      watchFaceMaterial.color.setHex(parseInt(val.replace('#', ''), 16));
+    });
+    watchFaceFolder.add(watchFaceParams, 'Metalness', 0, 1, 0.01).onChange((val) => {
+      watchFaceMaterial.metalness = val;
+    });
+    watchFaceFolder.add(watchFaceParams, 'Roughness', 0, 1, 0.01).onChange((val) => {
+      watchFaceMaterial.roughness = val;
+    });
+    watchFaceFolder.close();
+  }
+  
+  // Central Cylinder subfolder - syncs with Hour Arm
+  if (pinMaterial && hourArmMaterial) {
+    const pinFolder = materialsFolder.addFolder('Central Cylinder');
+    // Use hour arm params since they should be the same
+    pinFolder.addColor(armParams, 'Hour Color').onChange((val) => {
+      const color = parseInt(val.replace('#', ''), 16);
+      hourArmMaterial.color.setHex(color);
+      pinMaterial.color.setHex(color); // Sync with hour arm
+    });
+    pinFolder.add(armParams, 'Hour Metalness', 0, 1, 0.01).onChange((val) => {
+      hourArmMaterial.metalness = val;
+      pinMaterial.metalness = val; // Sync with hour arm
+    });
+    pinFolder.add(armParams, 'Hour Roughness', 0, 1, 0.01).onChange((val) => {
+      hourArmMaterial.roughness = val;
+      pinMaterial.roughness = val; // Sync with hour arm
+    });
+    pinFolder.close();
+  }
+
+  // Cube Materials subfolder
+  const cubeMaterialFolder = materialsFolder.addFolder('Cubes');
+  cubeMaterialFolder.addColor(cubeParams, 'Base Color').onChange((val) => {
+    const color = parseInt(val.replace('#', ''), 16);
+    // Update all existing cubes
+    cubes.forEach(cube => {
+      if (cube.mesh && cube.mesh.material) {
+        cube.mesh.material.color.setHex(color);
+      }
+    });
+  });
+  cubeMaterialFolder.add(cubeParams, 'Metalness', 0, 1, 0.01).onChange((val) => {
+    cubes.forEach(cube => {
+      if (cube.mesh && cube.mesh.material) {
+        cube.mesh.material.metalness = val;
+      }
+    });
+  });
+  cubeMaterialFolder.add(cubeParams, 'Roughness', 0, 1, 0.01).onChange((val) => {
+    cubes.forEach(cube => {
+      if (cube.mesh && cube.mesh.material) {
+        cube.mesh.material.roughness = val;
+      }
+    });
+  });
+  cubeMaterialFolder.add(cubeParams, 'Roundness', 0, 0.5, 0.01).onChange((val) => {
+    cubeRoundness = val;
+    // Update all existing cubes - need to recreate geometry
+    cubes.forEach(cube => {
+      if (cube.mesh) {
+        const oldSize = cube.size;
+        // Dispose old geometry
+        cube.mesh.geometry.dispose();
+        // Create new geometry with updated roundness
+        const newGeometry = new RoundedBoxGeometry(oldSize, oldSize, oldSize, 3, val);
+        cube.mesh.geometry = newGeometry;
+      }
+    });
+  });
+  cubeMaterialFolder.close();
+
+  // Arm Materials subfolder
+  const armMaterialFolder = materialsFolder.addFolder('Arms');
+  
+  // Second Arm subfolder
+  if (secondArmMaterial) {
+    const secondArmFolder = armMaterialFolder.addFolder('Second Arm');
+    secondArmFolder.addColor(armParams, 'Second Color').onChange((val) => {
+      secondArmMaterial.color.setHex(parseInt(val.replace('#', ''), 16));
+    });
+    secondArmFolder.add(armParams, 'Second Metalness', 0, 1, 0.01).onChange((val) => {
+      secondArmMaterial.metalness = val;
+    });
+    secondArmFolder.add(armParams, 'Second Roughness', 0, 1, 0.01).onChange((val) => {
+      secondArmMaterial.roughness = val;
+    });
+    secondArmFolder.close();
+  }
+  
+  // Minute Arm subfolder
+  if (minuteArmMaterial) {
+    const minuteArmFolder = armMaterialFolder.addFolder('Minute Arm');
+    minuteArmFolder.addColor(armParams, 'Minute Color').onChange((val) => {
+      minuteArmMaterial.color.setHex(parseInt(val.replace('#', ''), 16));
+    });
+    minuteArmFolder.add(armParams, 'Minute Metalness', 0, 1, 0.01).onChange((val) => {
+      minuteArmMaterial.metalness = val;
+    });
+    minuteArmFolder.add(armParams, 'Minute Roughness', 0, 1, 0.01).onChange((val) => {
+      minuteArmMaterial.roughness = val;
+    });
+    minuteArmFolder.close();
+  }
+  
+  // Hour Arm subfolder - syncs with Central Cylinder
+  if (hourArmMaterial && pinMaterial) {
+    const hourArmFolder = armMaterialFolder.addFolder('Hour Arm');
+    hourArmFolder.addColor(armParams, 'Hour Color').onChange((val) => {
+      const color = parseInt(val.replace('#', ''), 16);
+      hourArmMaterial.color.setHex(color);
+      pinMaterial.color.setHex(color); // Sync with pin
+    });
+    hourArmFolder.add(armParams, 'Hour Metalness', 0, 1, 0.01).onChange((val) => {
+      hourArmMaterial.metalness = val;
+      pinMaterial.metalness = val; // Sync with pin
+    });
+    hourArmFolder.add(armParams, 'Hour Roughness', 0, 1, 0.01).onChange((val) => {
+      hourArmMaterial.roughness = val;
+      pinMaterial.roughness = val; // Sync with pin
+    });
+    hourArmFolder.close();
+  }
+  armMaterialFolder.close();
+  materialsFolder.close();
+
+  // Animation section
   const animationFolder = gui.addFolder('Animation');
   animationFolder.add(animationParams, 'Seconds Lerp', 0, 1, 0.01).onChange((val) => {
     secondsLerpFactor = val;
@@ -671,8 +924,9 @@ if (false && gui) {
   animationFolder.add(animationParams, 'Hours Lerp', 0, 1, 0.01).onChange((val) => {
     hoursLerpFactor = val;
   });
+  animationFolder.close();
   
-  // Debug folder
+  // Debug section
   const debugFolder = gui.addFolder('Debug');
   debugFolder.add(debugParams, 'Show Axes').onChange((val) => {
     showAxes = val;
@@ -682,247 +936,150 @@ if (false && gui) {
     showGrid = val;
     gridHelper.visible = val;
   });
+  debugFolder.close();
   
-  // Cubes folder
-  const cubesFolder = gui.addFolder('Cubes');
-  cubesFolder.add(cubesParams, 'Cube Roundness', 0, 0.2, 0.01).onChange((val) => {
-    cubeRoundness = val;
-    // Update all existing cubes with new roundness
-    cubes.forEach(cube => {
-      const oldGeometry = cube.mesh.geometry;
-      const size = cube.size || 0.2; // Use stored size
-      
-      // Dispose old geometry
-      oldGeometry.dispose();
-      
-      // Create new geometry with updated roundness
-      const newGeometry = new RoundedBoxGeometry(size, size, size, 3, cubeRoundness);
-      cube.mesh.geometry = newGeometry;
-    });
+  // Fog section
+  const fogFolder = gui.addFolder('Fog');
+  fogFolder.add(fogParams, 'Fog Density', 0, 0.1, 0.001).onChange((val) => {
+    fogDensity = val;
+    scene.fog.density = val;
   });
+  fogFolder.close();
+  // Cubes section
+  const cubesFolder = gui.addFolder('Cubes');
   cubesFolder.add(cubesParams, 'Mass Variation', 0.1, 20.0, 0.1).onChange((val) => {
     massVariation = val;
     // Update existing cubes: recalculate adjusted mass and update physics collider density
     cubes.forEach(cube => {
-    if (cube.baseMass !== undefined) {
-      // Recalculate adjusted mass with new multiplier
-      const newAdjustedMass = cube.baseMass * massVariation;
-      cube.mass = newAdjustedMass;
-      
-      // Update physics collider density
-      if (cube.collider && physicsWorld) {
-        const position = cube.rigidBody.translation();
-        const rotation = cube.rigidBody.rotation();
-        const linvel = cube.rigidBody.linvel();
-        const angvel = cube.rigidBody.angvel();
+      if (cube.baseMass !== undefined) {
+        const newAdjustedMass = cube.baseMass * massVariation;
+        cube.mass = newAdjustedMass;
         
-        // Remove old collider (wakeUp = true to ensure physics updates)
-        physicsWorld.removeCollider(cube.collider, true);
-        
-        // Get physics properties from material
-        const friction = cube.mesh.material.userData?.friction || 0.5;
-        const restitution = cube.mesh.material.userData?.restitution || 0.5;
-        
-        // Create new collider with updated density
-        const colliderDesc = RAPIER.ColliderDesc.cuboid(cube.size / 2, cube.size / 2, cube.size / 2)
-          .setDensity(newAdjustedMass)
-          .setFriction(friction)
-          .setRestitution(restitution);
-        cube.collider = physicsWorld.createCollider(colliderDesc, cube.rigidBody);
-        
-        // Ensure rigid body is awake and active
-        cube.rigidBody.wakeUp();
-        
-        // Restore position, rotation, and velocity
-        cube.rigidBody.setTranslation(position, true);
-        cube.rigidBody.setRotation(rotation, true);
-        cube.rigidBody.setLinvel(linvel, true);
-        cube.rigidBody.setAngvel(angvel, true);
+        if (cube.collider && physicsWorld) {
+          const position = cube.rigidBody.translation();
+          const rotation = cube.rigidBody.rotation();
+          const linvel = cube.rigidBody.linvel();
+          const angvel = cube.rigidBody.angvel();
+          
+          physicsWorld.removeCollider(cube.collider, true);
+          
+          const friction = cube.mesh.material.userData?.friction || 0.5;
+          const restitution = cube.mesh.material.userData?.restitution || 0.5;
+          
+          const colliderDesc = RAPIER.ColliderDesc.cuboid(cube.size / 2, cube.size / 2, cube.size / 2)
+            .setDensity(newAdjustedMass)
+            .setFriction(friction)
+            .setRestitution(restitution);
+          cube.collider = physicsWorld.createCollider(colliderDesc, cube.rigidBody);
+          
+          cube.rigidBody.wakeUp();
+          cube.rigidBody.setTranslation(position, true);
+          cube.rigidBody.setRotation(rotation, true);
+          cube.rigidBody.setLinvel(linvel, true);
+          cube.rigidBody.setAngvel(angvel, true);
+        }
+      } else {
+        const newColor = massToColor(cube.mass / massVariation);
+        cube.mesh.material.color.setHex(newColor);
       }
-    } else {
-      // Fallback for cubes created before baseMass was stored
-      const newColor = massToColor(cube.mass / massVariation);
-      cube.mesh.material.color.setHex(newColor);
-    }
-  });
+    });
   });
   cubesFolder.add(cubesParams, 'Repulsion Strength', 0, 200, 1).onChange((val) => {
     repulsionStrength = val;
   });
-  const cubeSizeMinCtrl = cubesFolder.add(cubesParams, 'Cube Size Min', 0.05, 1.0, 0.01);
-  cubeSizeMinCtrl.onChange((val) => {
+  cubesFolder.add(cubesParams, 'Cube Size Min', 0.05, 1.0, 0.01).onChange((val) => {
     cubeSizeMin = val;
-    // Ensure min doesn't exceed max
     if (cubeSizeMin > cubeSizeMax) {
       cubeSizeMin = cubeSizeMax;
       cubesParams['Cube Size Min'] = cubeSizeMin;
-      cubeSizeMinCtrl.updateDisplay();
     }
-    // Update all existing cubes
     updateCubeSizes();
   });
-
-  const cubeSizeMaxCtrl = cubesFolder.add(cubesParams, 'Cube Size Max', 0.05, 1.0, 0.01);
-  cubeSizeMaxCtrl.onChange((val) => {
+  cubesFolder.add(cubesParams, 'Cube Size Max', 0.05, 1.0, 0.01).onChange((val) => {
     cubeSizeMax = val;
-    // Ensure max doesn't go below min
     if (cubeSizeMax < cubeSizeMin) {
       cubeSizeMax = cubeSizeMin;
       cubesParams['Cube Size Max'] = cubeSizeMax;
-      cubeSizeMaxCtrl.updateDisplay();
     }
-    // Update all existing cubes
     updateCubeSizes();
   });
+  cubesFolder.close();
   
-  // Store controllers after creation
-  const cameraXCtrl = cameraFolder.add(cameraParams, 'Camera X', -20, 20, 0.1);
-  cameraControllers.positionX = cameraXCtrl;
-  cameraXCtrl.onChange((val) => {
+  // Camera section
+  const cameraFolder = gui.addFolder('Camera');
+  cameraFolder.add(cameraParams, 'Camera X', -20, 20, 0.1).onChange((val) => {
     camera.position.x = val;
     controls.update();
   });
-  
-  const cameraYCtrl = cameraFolder.add(cameraParams, 'Camera Y', 0, 20, 0.1);
-  cameraControllers.positionY = cameraYCtrl;
-  cameraYCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Camera Y', 0, 20, 0.1).onChange((val) => {
     camera.position.y = val;
     controls.update();
   });
-  
-  const cameraZCtrl = cameraFolder.add(cameraParams, 'Camera Z', -20, 20, 0.1);
-  cameraControllers.positionZ = cameraZCtrl;
-  cameraZCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Camera Z', -20, 20, 0.1).onChange((val) => {
     camera.position.z = val;
     controls.update();
   });
-  
-  const targetXCtrl = cameraFolder.add(cameraParams, 'Target X', -10, 10, 0.1);
-  cameraControllers.targetX = targetXCtrl;
-  targetXCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Target X', -10, 10, 0.1).onChange((val) => {
     controls.target.x = val;
     controls.update();
   });
-  
-  const targetYCtrl = cameraFolder.add(cameraParams, 'Target Y', -10, 10, 0.1);
-  cameraControllers.targetY = targetYCtrl;
-  targetYCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Target Y', -10, 10, 0.1).onChange((val) => {
     controls.target.y = val;
     controls.update();
   });
-  
-  const targetZCtrl = cameraFolder.add(cameraParams, 'Target Z', -10, 10, 0.1);
-  cameraControllers.targetZ = targetZCtrl;
-  targetZCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Target Z', -10, 10, 0.1).onChange((val) => {
     controls.target.z = val;
     controls.update();
   });
-  
-  const zoomCtrl = cameraFolder.add(cameraParams, 'Zoom', 0.1, 5, 0.1);
-  cameraControllers.zoom = zoomCtrl;
-  zoomCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'Zoom', 0.1, 5, 0.1).onChange((val) => {
     camera.zoom = val;
     camera.updateProjectionMatrix();
   });
-  
-  const fovCtrl = cameraFolder.add(cameraParams, 'FOV', 10, 120, 1);
-  cameraControllers.fov = fovCtrl;
-  fovCtrl.onChange((val) => {
+  cameraFolder.add(cameraParams, 'FOV', 10, 120, 1).onChange((val) => {
     camera.fov = val;
     camera.updateProjectionMatrix();
   });
+  cameraFolder.close();
   
-  // Save/Load functionality
+  // Copy to clipboard button
   const saveLoadFolder = gui.addFolder('Save/Load');
   const saveLoadParams = {
-    save: () => {
-      const data = {
-        ...cameraParams,
-        ...fogParams,
-        ...lightingParams,
-        ...animationParams,
-        ...debugParams
-      };
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'debug-settings.json';
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-    load: () => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'application/json';
-      input.onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            try {
-              const data = JSON.parse(event.target.result);
-              // Update all params
-              Object.assign(cameraParams, data);
-              Object.assign(fogParams, data);
-              Object.assign(lightingParams, data);
-              Object.assign(animationParams, data);
-              Object.assign(debugParams, data);
-              // Update GUI displays - controllers will update automatically when params change
-              // Apply values
-              camera.position.set(cameraParams['Camera X'], cameraParams['Camera Y'], cameraParams['Camera Z']);
-              controls.target.set(cameraParams['Target X'], cameraParams['Target Y'], cameraParams['Target Z']);
-              camera.zoom = cameraParams['Zoom'];
-              camera.fov = cameraParams['FOV'];
-              camera.updateProjectionMatrix();
-              controls.update();
-              scene.fog.density = fogParams['Fog Density'];
-              ambientLight.intensity = lightingParams['Ambient Intensity'];
-              directionalLight.intensity = lightingParams['Directional Intensity'];
-              secondsLerpFactor = animationParams['Seconds Lerp'];
-              minutesLerpFactor = animationParams['Minutes Lerp'];
-              hoursLerpFactor = animationParams['Hours Lerp'];
-              axesHelper.visible = debugParams['Show Axes'];
-              gridHelper.visible = debugParams['Show Grid'];
-            } catch (err) {
-              alert('Error loading file: ' + err.message);
-            }
-          };
-          reader.readAsText(file);
-        }
-      };
-      input.click();
-    },
     copy: async () => {
       const data = {
         ...cameraParams,
         ...fogParams,
         ...lightingParams,
+        ...watchFaceParams,
+        ...cubeParams,
+        ...armParams,
         ...animationParams,
-        ...debugParams
+        ...debugParams,
+        ...cubesParams
       };
       const json = JSON.stringify(data, null, 2);
       try {
         await navigator.clipboard.writeText(json);
-        alert('Copied to clipboard!');
+        alert('Settings copied to clipboard!');
       } catch (err) {
-        // Fallback
+        // Fallback for older browsers
         const textarea = document.createElement('textarea');
         textarea.value = json;
         textarea.style.position = 'fixed';
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
         textarea.select();
-        document.execCommand('copy');
+        try {
+          document.execCommand('copy');
+          alert('Settings copied to clipboard!');
+        } catch (fallbackErr) {
+          alert('Failed to copy to clipboard');
+        }
         document.body.removeChild(textarea);
-        alert('Copied to clipboard!');
       }
     }
   };
-  saveLoadFolder.add(saveLoadParams, 'save');
-  saveLoadFolder.add(saveLoadParams, 'load');
-  saveLoadFolder.add(saveLoadParams, 'copy');
+  saveLoadFolder.add(saveLoadParams, 'copy').name('Copy to Clipboard');
+  saveLoadFolder.close();
 }
 
 // Function to update all existing cube sizes based on new min/max range
@@ -968,7 +1125,7 @@ function updateCubeSizes() {
 }
 
 // Store controller references for real-time updates (defined outside if block for animate function)
-// cameraControllers is now declared earlier, before GUI creation
+// Parameters are managed by GUI
 
 
 // FPS tracking (for internal use, not displayed)
@@ -1477,42 +1634,7 @@ function animate() {
     }
   }
   
-  // Update lil-gui camera controls to reflect current camera state (desktop only)
-  // Only update if values differ to avoid triggering onChange callbacks
-  if (!isMobile) {
-    if (cameraControllers.positionX && Math.abs(cameraParams['Camera X'] - camera.position.x) > 0.01) {
-      cameraParams['Camera X'] = camera.position.x;
-      cameraControllers.positionX.updateDisplay();
-    }
-    if (cameraControllers.positionY && Math.abs(cameraParams['Camera Y'] - camera.position.y) > 0.01) {
-      cameraParams['Camera Y'] = camera.position.y;
-      cameraControllers.positionY.updateDisplay();
-    }
-    if (cameraControllers.positionZ && Math.abs(cameraParams['Camera Z'] - camera.position.z) > 0.01) {
-      cameraParams['Camera Z'] = camera.position.z;
-      cameraControllers.positionZ.updateDisplay();
-    }
-    if (cameraControllers.targetX && Math.abs(cameraParams['Target X'] - controls.target.x) > 0.01) {
-      cameraParams['Target X'] = controls.target.x;
-      cameraControllers.targetX.updateDisplay();
-    }
-    if (cameraControllers.targetY && Math.abs(cameraParams['Target Y'] - controls.target.y) > 0.01) {
-      cameraParams['Target Y'] = controls.target.y;
-      cameraControllers.targetY.updateDisplay();
-    }
-    if (cameraControllers.targetZ && Math.abs(cameraParams['Target Z'] - controls.target.z) > 0.01) {
-      cameraParams['Target Z'] = controls.target.z;
-      cameraControllers.targetZ.updateDisplay();
-    }
-    if (cameraControllers.zoom && Math.abs(cameraParams['Zoom'] - camera.zoom) > 0.01) {
-      cameraParams['Zoom'] = camera.zoom;
-      cameraControllers.zoom.updateDisplay();
-    }
-    if (cameraControllers.fov && Math.abs(cameraParams['FOV'] - camera.fov) > 0.1) {
-      cameraParams['FOV'] = camera.fov;
-      cameraControllers.fov.updateDisplay();
-    }
-  }
+  // Camera params are updated by GUI controls, no sync needed
   
   // Update day and date on watch face (only when changed)
   if (watchFace.userData.dayMesh && watchFace.userData.dateMesh) {

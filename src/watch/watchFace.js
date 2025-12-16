@@ -56,8 +56,8 @@ export function createWatchFace() {
   const faceGeometry = new THREE.CircleGeometry(watchFaceRadius, 64); // Scaled up from 2 to 3
   const faceMaterial = new THREE.MeshStandardMaterial({
     color: 0xf5f5f5,
-    metalness: 0.1,
-    roughness: 0.7,
+    metalness: 0.04,
+    roughness: 0,
     side: THREE.DoubleSide // Visible from both sides
   });
   const face = new THREE.Mesh(faceGeometry, faceMaterial);
@@ -204,13 +204,21 @@ export function createWatchFace() {
   const pinRadius = 0.12; // Increased from 0.075 - larger diameter
   const pinHeight = 0.4; // Increased from 0.225 - taller
   const pinGeometry = new THREE.CylinderGeometry(pinRadius, pinRadius, pinHeight, 16);
-  const pinMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+  // Use same material as hour arm (will be set in main.js)
+  const pinMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x6e6e6e, // Dark gray - same as hour arm
+    metalness: 0.0,
+    roughness: 0
+  });
   const pin = new THREE.Mesh(pinGeometry, pinMaterial);
   // No rotation needed - cylinder default is along Y-axis (vertical)
-  // Position so bottom sits on watch face (Y=0), center is at half height
+  // Position so bottom sits on watch face (Y=0), center is at half its height
   pin.position.y = pinHeight / 2; // Center of cylinder at half its height
   pin.castShadow = true; // Pin casts shadows
   group.add(pin);
+  
+  // Store pin material for GUI control
+  group.userData.pinMaterial = pinMaterial;
   
   // Day and date display (positioned to the left of 3 o'clock, in one row)
   // 3 o'clock is at angle = (3/12) * 2π - π/2 = 0, so x = 2.5, z = 0

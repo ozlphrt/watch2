@@ -24,7 +24,11 @@ export function createWatchArms() {
     secondArmLength, // height (length of arm)
     8 // segments
   );
-  const secondArmMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 }); // Red
+  const secondArmMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xff6600, // Orange
+    metalness: 0.0,
+    roughness: 0
+  });
   const secondArm = new THREE.Mesh(secondArmGeometry, secondArmMaterial);
   // Rotate to be horizontal (along Z-axis instead of Y-axis)
   secondArm.rotation.x = Math.PI / 2; // Rotate 90 degrees around X to make it horizontal
@@ -38,7 +42,11 @@ export function createWatchArms() {
   const minuteArmGroup = new THREE.Group();
   // Use RoundedBoxGeometry for rounded ends at the base (center)
   const minuteArmGeometry = new RoundedBoxGeometry(0.12, 0.045, 1.8, 3, 0.06); // width, height, depth, segments, roundness
-  const minuteArmMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 }); // Black
+  const minuteArmMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x7d7d7d, // Gray
+    metalness: 0.0,
+    roughness: 0
+  });
   const minuteArm = new THREE.Mesh(minuteArmGeometry, minuteArmMaterial);
   minuteArm.position.z = 0.9; // Scaled up from 0.6
   minuteArm.position.y = 0.35; // Higher to avoid overlapping with cubes
@@ -50,7 +58,11 @@ export function createWatchArms() {
   const hourArmGroup = new THREE.Group();
   // Use RoundedBoxGeometry for rounded ends at the base (center)
   const hourArmGeometry = new RoundedBoxGeometry(0.16, 0.045, 1.2, 3, 0.08); // width, height, depth, segments, roundness
-  const hourArmMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 }); // Black
+  const hourArmMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x6e6e6e, // Dark gray
+    metalness: 0.0,
+    roughness: 0
+  });
   const hourArm = new THREE.Mesh(hourArmGeometry, hourArmMaterial);
   hourArm.position.z = 0.6; // Scaled up from 0.4
   hourArm.position.y = 0.30; // Higher to avoid overlapping with cubes
