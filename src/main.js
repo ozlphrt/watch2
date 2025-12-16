@@ -70,22 +70,16 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 
-// Camera initial setup - will be dynamically adjusted on mobile
+// Camera initial setup - user control enabled for both mobile and desktop
+// Set a reasonable initial position that shows the watch face well
 if (isMobile) {
-  // Don't set fixed camera position on mobile - let animate loop calculate optimal position
-  // Set initial target position to a reasonable starting point, will be updated immediately
-  targetCameraPosition.set(0, 1.8, 0); // Further reduced to bring camera closer to watch face
-  targetCameraZoom = 1.5;
-  // Copy to actual camera - will be overridden in first animate frame
-  camera.position.copy(targetCameraPosition);
-  camera.zoom = targetCameraZoom;
-  // Set fixed camera orientation (no rotation)
-  camera.up.set(0, 1, 0);
+  // Initial position for mobile - user can adjust with touch
+  camera.position.set(0, 2.5, 4.5);
+  camera.zoom = 1.5;
 } else {
+  // Initial position for desktop - user can adjust with mouse
   camera.position.set(-0.3, 3.3, 2.7);
   camera.zoom = 1.7;
-  targetCameraPosition.copy(camera.position);
-  targetCameraZoom = camera.zoom;
 }
 camera.updateProjectionMatrix();
 
@@ -102,19 +96,20 @@ const { axesHelper, gridHelper } = setupCoordinateSystem(scene);
 axesHelper.visible = false; // Default: hidden
 gridHelper.visible = false; // Default: hidden
 
-// Camera controls
+// Camera controls - enabled for user interaction (touch/mouse)
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-  // Mobile: disable OrbitControls to allow manual camera control; Desktop: keep original offset
-  if (isMobile) {
-    // Disable OrbitControls on mobile so our manual camera positioning works
-    controls.enabled = false;
-    // Don't set target on mobile - camera will use lookAt directly
-  } else {
-    controls.target.set(-0.2, 0.5, 1.3);
-    controls.update();
-  }
+controls.enablePan = false; // Disable panning - only allow rotation around target
+controls.enableZoom = true; // Allow zoom
+controls.minDistance = 2.0; // Minimum distance from target
+controls.maxDistance = 15.0; // Maximum distance from target
+controls.minPolarAngle = Math.PI / 6; // Minimum angle (30 degrees from top)
+controls.maxPolarAngle = Math.PI / 2.2; // Maximum angle (about 82 degrees from top) - keep camera above watch
+// Enable controls for both mobile and desktop
+controls.enabled = true;
+// Set initial target (will be updated to yellow star in animate loop)
+controls.target.set(0, 0.08, 0);
 
 // Watch face (at origin, Y=0)
 const watchFace = createWatchFace();
@@ -1020,10 +1015,7 @@ function animate() {
   }
   
   
-  // Update controls (only on desktop, mobile uses manual camera control)
-  if (!isMobile) {
-    controls.update();
-  }
+  // Controls will be updated after setting target to yellow star
   
   // Update watch arms rotation first
   const now = new Date();
@@ -1144,23 +1136,39 @@ function animate() {
   }
   
   // Camera should always look at the arm midpoint (use the same values as the star)
-  // This applies to all devices, not just mobile
-  // IMPORTANT: Disable OrbitControls target updates on desktop too, so lookAt works
-  if (!isMobile && controls.enabled) {
-    controls.enabled = false; // Disable OrbitControls so our lookAt works
-  }
-  camera.up.set(0, 1, 0); // Y-up
-  camera.lookAt(armMidpointX, armY, armMidpointZ);
-  camera.updateMatrix();
+  // Update OrbitControls target to follow the yellow star
+  controls.target.set(armMidpointX, armY, armMidpointZ);
   
-  // Mobile: Camera positioning - clean rewrite
-  // Requirements:
-  // 1. Camera always targets yellow star (arm midpoint) - handled above with lookAt
-  // 2. Camera positions in 10-2 area (top half of watch)
-  // 3. Seconds arm must be 100% visible at all times
-  // 4. Maximize zoom while maintaining visibility
-  // 5. Update camera position every 10 seconds for smoother motion
-  if (isMobile) {
+  // Update controls to apply user input (touch/mouse)
+  controls.update();
+  
+  // Verify seconds arm is in frame, adjust camera distance if needed
+  // Reuse secondArmLength and armHalfLength already declared above
+  // Calculate arm endpoints in world space
+  const armStart = new THREE.Vector3(0, 0.08, 0);
+  const armEnd = new THREE.Vector3(
+    Math.sin(smoothedSecondsRotation) * armHalfLength,
+    0.08,
+    Math.cos(smoothedSecondsRotation) * armHalfLength
+  );
+  
+  // Check if arm fits in camera view
+  const cameraToTarget = camera.position.distanceTo(controls.target);
+  const minRequiredDistance = armHalfLength * 2.5; // Need sufficient distance to see full arm
+  
+  // If camera is too close, push it back while maintaining user's rotation
+  if (cameraToTarget < minRequiredDistance) {
+    const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+    camera.position.copy(controls.target).add(direction.multiplyScalar(minRequiredDistance));
+    controls.update();
+  }
+  
+  camera.up.set(0, 1, 0); // Y-up
+  
+  // Mobile: Camera positioning - DISABLED to allow user control
+  // User can now control camera with touch/mouse while it follows yellow star
+  // Camera auto-positioning disabled - user has full control via OrbitControls
+  if (false && isMobile) { // Disabled - user control enabled
     // Only recalculate camera position every 10 seconds for smoother motion
     const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
     const shouldUpdateCamera = (currentTime % cameraUpdateInterval === 0) && (currentTime !== lastCameraAdjustSecond);
