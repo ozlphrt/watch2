@@ -1,64 +1,57 @@
+import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-export default {
-  // Use root base path for development, /watch2/ for production (GitHub Pages)
-  base: process.env.NODE_ENV === 'production' ? '/watch2/' : '/',
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const isGame = process.env.VITE_ENTRY === 'game';
+const isProduction = process.env.NODE_ENV === 'production';
+
+export default defineConfig({
+  base: isProduction ? '/watch2/' : '/',
+  root: isGame ? resolve(__dirname, 'game') : resolve(__dirname),
   server: {
-    port: 3000,
-    open: true
+    port: isGame ? 3001 : 3000,
+    host: true, // Listen on all interfaces (IPv4 and IPv6)
+    open: isGame ? '/' : true,
+  },
+  build: {
+    rollupOptions: {
+      input: isGame ? resolve(__dirname, 'game/index.html') : resolve(__dirname, 'index.html'),
+    },
   },
   plugins: [
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['192.png', '512.png', 'favicon.ico'],
-      manifest: {
-        name: 'Watch Physics Simulation',
-        short_name: 'Watch2',
-        description: 'Interactive 3D watch with physics simulation',
-        theme_color: '#a0a0b0',
-        background_color: '#a0a0b0',
-        display: 'standalone',
-        orientation: 'any',
-        scope: '/watch2/',
-        start_url: '/watch2/',
-        icons: [
-          {
-            src: '/watch2/192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable'
-          },
-          {
-            src: '/watch2/512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }
-        ]
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
-      }
-    })
+    // Only enable PWA in production builds
+    ...(isProduction ? [
+      VitePWA({
+        registerType: 'autoUpdate',
+        manifest: {
+          name: isGame ? 'Watch Matching Game' : 'Watch Physics Simulation',
+          short_name: isGame ? 'Watch Game' : 'Watch Sim',
+          description: isGame ? 'Match colored cubes with Greek letters' : '3D watch with physics simulation',
+          theme_color: '#000000',
+          background_color: '#000000',
+          display: 'standalone',
+          scope: isGame ? '/watch2/game/' : '/watch2/',
+          start_url: isGame ? '/watch2/game/' : '/watch2/',
+          icons: [
+            {
+              src: isProduction ? '/watch2/192.png' : '/192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: isProduction ? '/watch2/512.png' : '/512.png',
+              sizes: '512x512',
+              type: 'image/png',
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        },
+      }),
+    ] : []),
   ],
-  optimizeDeps: {
-    exclude: ['@dimforge/rapier3d']
-  },
-  assetsInclude: ['**/*.wasm']
-};
+});
